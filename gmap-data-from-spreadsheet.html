@@ -1,0 +1,222 @@
+<html>
+    <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>
+        <title>Google Maps: Spreadsheet</title>
+        <style>
+            body{
+                padding:10px;
+                margin: 0;
+            }
+            #map{
+                width: 100%;
+                height: 88vh;
+            }
+            #search-address{
+                width: 100%;
+                padding: 1%;
+                font-size: 16px;
+                margin-bottom: 10px;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="map-navigation">
+            <input type="text" id="search-address">
+            <div id="map"></div>
+        </div>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.2.1/jquery.js"></script>
+        <script src="https://maps.googleapis.com/maps/api/js?libraries=places&key=AIzaSyBYjhQkF5CgJs7Aa7vtzxeDNwucrNt4ptQ"></script>
+        <script src="https://developers.google.com/maps/documentation/javascript/examples/markerclusterer/markerclusterer.js"></script>
+        <script src="js/jszip.js"></script>
+        <script src="js/xlsx.js"></script>
+        <script>
+            $('document').ready(function (e) {
+                read_file_data();
+            });
+        </script>
+        <!-- Reading data from Map Import File -->
+        <script type="application/javascript">
+
+            var X = XLSX;
+            var map_info_file_path = "files/makers-bulk.csv";
+
+            function fixdata(data) {
+                var o = "", l = 0, w = 10240;
+                for (; l < data.byteLength / w; ++l) o += String.fromCharCode.apply(null, new Uint8Array(data.slice(l * w, l * w + w)));
+                o += String.fromCharCode.apply(null, new Uint8Array(data.slice(l * w)));
+                return o;
+            }
+
+            function to_json(workbook) {
+                var result = {};
+                workbook.SheetNames.forEach(function (sheetName) {
+                    var roa = X.utils.sheet_to_row_object_array(workbook.Sheets[sheetName]);
+                    if (roa.length > 0) {
+                        result[sheetName] = roa;
+                    }
+                });
+                return result;
+            }
+
+            function process_wb(wb) {
+                return JSON.stringify(to_json(wb), 2, 2);
+            }
+
+            function read_file_data() {
+
+                var file_data = [];
+                var xhr = new XMLHttpRequest();
+                xhr.open('GET', map_info_file_path, true);
+                xhr.responseType = 'blob';
+                xhr.onload = function(e) {
+
+                    if (this.status == 200) {
+
+                        var file_blob = this.response;
+                        var reader = new FileReader();
+
+                        reader.onload = function (e) {
+                            var data = e.target.result;
+                            var arr = fixdata(data);
+                            wb = X.read(btoa(arr), {type: 'base64'});
+
+                            var map_file_data = process_wb(wb);
+                            setMapLocations(map_file_data);
+                        };
+                        reader.readAsArrayBuffer(file_blob)
+                    }
+                };
+                xhr.send();
+            }
+        </script>
+        <!-- Google map init, settings and actions -->
+        <script type="application/javascript">
+
+            var map, last_marker;
+            var markers = [];
+
+            var infowindow = new google.maps.InfoWindow();
+            var autocomplete = new google.maps.places.Autocomplete($("#search-address")[0], {});
+
+            function setMapLocations(map_file_data) {
+
+                map_file_data = $.parseJSON(map_file_data);
+
+                map = new google.maps.Map(document.getElementById('map'), {
+                    center: {lat: 55.378051, lng: -3.435973},   // United Kingdom
+                    zoom:6
+                });
+
+                // Validating with total number of sheets in excel file
+                if(Object.size(map_file_data) > 0){
+
+                    // Traversing through excel sheets
+                    for (var x in map_file_data){
+                        var curr_sheet = map_file_data[x];
+
+                        // Validating with total number of rows in sheet
+                        if(Object.size(curr_sheet) > 0){
+
+                            // Traversing through sheet rows
+                            for (var z in curr_sheet){
+                                var sheet_row = curr_sheet[z];
+
+                                for(var x in sheet_row){
+                                    var curr_key = String(x).toLowerCase();
+                                    if(curr_key.search('longitude') >= 0){
+                                        var lng_val = sheet_row[x];
+                                        delete sheet_row[x];
+                                        sheet_row['Longitude'] = lng_val;
+                                    }
+                                }
+
+                                var lat = String(sheet_row['Latitude']) != 'undefined' ? sheet_row['Latitude']:'';
+                                var lng = String(sheet_row['Longitude']) != 'undefined' ? sheet_row['Longitude']:'';
+
+                                if(lng != '' && lat !=''){
+                                    setMapMarkers(sheet_row);
+                                }
+                            }
+
+                            // Add a marker clusterer to manage the markers.
+                            var markerCluster = new MarkerClusterer(map, markers, {imagePath: 'https://developers.google.com/maps/documentation/javascript/examples/markerclusterer/m'});
+                        }
+                    }
+                }
+            }
+
+            function setMapMarkers(sheet_row) {
+
+                var postcode = String(sheet_row['Postcode']) != 'undefined' ? sheet_row['Postcode']:'';
+                var address_3 = String(sheet_row['Address 3']) != 'undefined' ? sheet_row['Address 3']:'';
+                var address_4 = String(sheet_row['Address 4']) != 'undefined' ? sheet_row['Address 4']:'';
+                var address = address_3+" "+address_4;
+                var lat = String(sheet_row['Latitude']) != 'undefined' ? sheet_row['Latitude']:'';
+                var lng = String(sheet_row['Longitude']) != 'undefined' ? sheet_row['Longitude']:'';
+
+                var latLng = {lat: parseFloat(lat), lng: parseFloat(lng)};
+
+                var marker = new google.maps.Marker({
+                    position: latLng,
+                    map: map
+                });
+
+                var infowindow_html = '';
+
+                infowindow_html += '<strong>Address:</strong> ';
+                if(address.trim()){
+                    infowindow_html += address;
+                } else {
+                    infowindow_html += 'N/A';
+                }
+                infowindow_html += '<br>';
+
+                infowindow_html += '<strong>Postcode:</strong> ';
+                if(postcode.trim()){
+                    infowindow_html += postcode;
+                } else {
+                    infowindow_html += 'N/A';
+                }
+
+                google.maps.event.addListener(marker,'click',function () {
+                    infowindow.setContent(infowindow_html);
+                    infowindow.open(map,this);
+                });
+
+                markers.push(marker);
+            }
+
+            google.maps.event.addListener(autocomplete, 'place_changed', function() {
+                setSearchLocation(autocomplete.getPlace());
+            });
+
+            function setSearchLocation(place) {
+
+                var latLng = {lat: place.geometry.location.lat(), lng: place.geometry.location.lng()};
+
+                var marker = new google.maps.Marker({
+                    position: latLng,
+                    map: map,
+                    scaledSize: new google.maps.Size(5, 5), // scaled size
+                    title: 'Target Location'
+                });
+
+                map.setCenter(latLng);
+                map.setZoom(9);
+
+                if(last_marker){
+                    last_marker.setMap(null);
+                }
+                last_marker = marker;
+            }
+
+            Object.size = function(obj) {
+                var size = 0, key;
+                for (key in obj) {
+                    if (obj.hasOwnProperty(key)) size++;
+                }
+                return size;
+            };
+        </script>
+    </body>
+</html>
