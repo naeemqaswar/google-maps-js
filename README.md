@@ -1,5 +1,5 @@
 # Google Maps Javascript API
-It's a collection of Google Map API integration samples from basic to advanced, which can benifit begginers as well as expert developers to use these code snippets as their code base.
+It's a collection of Google Map API integration samples from basic to advanced, which can benefit beginners as well as experts to use these code snippets as their code base to create a complex map.
 
 # Available Features
 <ul>
